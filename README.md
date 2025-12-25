@@ -52,8 +52,14 @@ The configuration includes several plugins to enhance productivity:
 Node.js is managed through NVM, allowing for easy switching between Node.js versions:
 
 ```bash
-export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
+export NVM_DIR="$HOME/.nvm"
+
+# NVM 延迟加载函数（提升启动速度）
+nvm() {
+  unset -f nvm
+  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+  nvm "$@"
+}
 ```
 
 ### Java Configuration
@@ -61,11 +67,11 @@ export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || pr
 Java 17 is configured using Zulu JDK:
 
 ```bash
-export JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home # 17
-export GRADLE_LOCAL_JAVA_HOME=JAVA_HOME
+export JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home
+export GRADLE_LOCAL_JAVA_HOME=$JAVA_HOME
 ```
 
-The configuration supports switching between different Java versions by uncommenting the appropriate line.
+The configuration supports switching between different Java versions by using the provided `switch_java` function.
 
 ### Android SDK
 
@@ -77,24 +83,117 @@ export PATH=$PATH:$ANDROID_HOME/emulator
 export PATH=$PATH:$ANDROID_HOME/tools
 export PATH=$PATH:$ANDROID_HOME/tools/bin
 export PATH=$PATH:$ANDROID_HOME/platform-tools
-export PATH=$PATH:$ANDROID_HOME/build-tools/33.0.0
+# 使用通配符或最新版本，避免硬编码
+# export PATH=$PATH:$ANDROID_HOME/build-tools/33.0.0
 ```
 
-### Python Configuration
+## PATH Configuration
 
-Python configuration prioritizes Homebrew-installed Python, especially for Apple M-series chips:
+The PATH is structured in a specific order to prioritize tools:
+
+1. **Homebrew** (`/opt/homebrew/bin:/opt/homebrew/sbin`): System-level tools managed by Homebrew
+2. **User binaries** (`$HOME/.local/bin`): User-installed tools and packages
+3. **VSCode**: Command-line tools for VSCode
+4. **Docker**: Docker command-line tools
+5. **Fastlane**: Mobile deployment tools
+6. **RVM**: Ruby Version Manager
+7. **pnpm**: Fast npm alternative package manager
+8. **Bun**: JavaScript runtime and package manager
+9. **Android SDK**: Various Android development tools
+
+Configuration:
 
 ```bash
-export PATH="/opt/homebrew/bin:$PATH" # Apple M 芯片
+# Homebrew (优先级最高)
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+
+# 用户级命令 (pipx, poetry 等)
+export PATH="$HOME/.local/bin:$PATH"
+
+# VSCode
+export PATH="/Applications/Visual Studio Code.app/Contents/Resources/app/bin:$PATH"
+
+# Docker
+export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+
+# Fastlane
+export PATH="$HOME/.fastlane/bin:$HOME/.fastlane/bin/fastlane_lib:$PATH"
+
+# RVM
+export PATH="$HOME/.rvm/bin:$PATH"
+
+# pnpm
+export PNPM_HOME="$HOME/Library/pnpm"
+case ":$PATH:" in
+  *":$PNPM_HOME:"*) ;;
+  *) export PATH="$PNPM_HOME:$PATH" ;;
+esac
+
+# Bun
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
 ```
 
 ### Ruby Configuration
 
-Ruby is configured with support for both rbenv and RVM:
+Ruby is configured with support for rbenv:
 
 ```bash
-if which rbenv > /dev/null; then eval "$(rbenv init -)"; fi
-export PATH="$PATH:$HOME/.rvm/bin"
+# 使用 rbenv 管理 Ruby 版本
+if command -v rbenv &> /dev/null; then
+  eval "$(rbenv init - zsh)"
+fi
+```
+
+### Shell Completions
+
+Shell completions are configured for various tools:
+
+```bash
+# Docker completions
+fpath=($HOME/.docker/completions $fpath)
+
+# Bun completions
+[ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
+
+# 初始化补全系统（只需一次）
+autoload -Uz compinit
+# 性能优化：每天只检查一次
+if [[ -n ${ZDOTDIR}/.zcompdump(#qN.mh+24) ]]; then
+  compinit
+else
+  compinit -C
+fi
+```
+
+### Custom Aliases
+
+Some custom aliases are included for convenience:
+
+```bash
+alias zshconfig="code ~/.zshrc"
+alias zshreload="source ~/.zshrc"
+# alias ll="ls -lah"
+# alias gs="git status"
+# alias gp="git pull"
+```
+
+### Custom Functions
+
+A function for switching Java versions is available:
+
+```bash
+# 快速切换 Java 版本
+switch_java() {
+  if [ "$1" = "17" ]; then
+    export JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home
+  elif [ "$1" = "11" ]; then
+    export JAVA_HOME=$(/usr/libexec/java_home -v 11)
+  elif [ "$1" = "8" ]; then
+    export JAVA_HOME=$(/usr/libexec/java_home -v 1.8)
+  fi
+  echo "JAVA_HOME: $JAVA_HOME"
+}
 ```
 
 ### Other Development Tools
@@ -104,17 +203,6 @@ export PATH="$PATH:$HOME/.rvm/bin"
 - **Docker**: Docker command-line tools and completions
 - **pnpm**: Fast npm alternative package manager
 - **bun**: JavaScript runtime and package manager
-
-## PATH Configuration
-
-The PATH is structured in a specific order to prioritize tools:
-
-1. **Homebrew** (`/opt/homebrew/bin:/opt/homebrew/sbin`): System-level tools managed by Homebrew
-2. **User binaries** (`$HOME/.local/bin`): User-installed tools and packages
-3. **Android SDK**: Various Android development tools
-4. **Development tools**: VSCode, Fastlane, Ruby, Docker, pnpm, bun
-
-This structure ensures that Homebrew-managed tools take precedence, followed by user-installed tools.
 
 ## Customization
 
@@ -164,7 +252,15 @@ git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$
    - `zsh-autosuggestions`: `git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions`
    - `zsh-syntax-highlighting`: `git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting`
 
-7. Restart your shell or run `source ~/.zshrc`
+7. Install additional tools and configurations:
+   - **Powerlevel10k**: Run `p10k configure` to customize your prompt
+   - **NVM**: Install Node.js versions as needed after NVM is set up
+   - **rbenv**: Install using `brew install rbenv` if you plan to use Ruby
+   - **Android SDK**: Install Android SDK tools if needed for mobile development
+   - **Docker completions**: May need to install Docker tools for full functionality
+   - **Bun**: Install using `curl -fsSL https://bun.sh/install | bash` if not already installed
+
+8. Restart your shell or run `source ~/.zshrc`
 
 ## Features
 
